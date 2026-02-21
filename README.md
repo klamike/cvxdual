@@ -11,12 +11,25 @@
 import cvxpy as cp
 from cvxdual import dualize, solve_dual
 
-x = cp.Variable(2)
-prob = cp.Problem(cp.Minimize(cp.sum(x)), [x >= 1])
+x = cp.Variable(name='x')
+y = cp.Variable(name='y')
+prob = cp.Problem(cp.Minimize(x - y), [x >= 1, y <= 1])
 
 dualized = dualize(prob)
+
+print('\n')
+for i in range(len(dualized.meta.dual_variables)):
+    var = dualized.meta.dual_variables[i]
+    print(f"{var.variable} corresponds to {var.constraint}")
+print('\n')
 print(dualized.dual_problem)
 
-solve_dual(prob, solver=cp.SCS)
-print(x.value)
+solve_dual(prob)
+print("solve_dual:", x.value, y.value)
+
+x = cp.Variable(name='x')
+y = cp.Variable(name='y')
+prob = cp.Problem(cp.Minimize(x - y), [x >= 1, y <= 1])
+prob.solve()
+print("solve:", x.value, y.value)
 ```
