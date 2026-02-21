@@ -1,6 +1,6 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [project]
 name = "cvxdual"
@@ -13,12 +13,6 @@ dependencies = [
   "cvxpy>=1.5",
 ]
 
-[project.optional-dependencies]
-dev = [
-  "ipython>=8.38.0",
-  "pytest>=8.0",
-]
-
 [dependency-groups]
 dev = [
   "ipython>=8.38.0",
@@ -28,8 +22,5 @@ dev = [
 [tool.uv]
 default-groups = ["dev"]
 
-[tool.setuptools]
-package-dir = { "" = "src" }
-
-[tool.setuptools.packages.find]
-where = ["src"]
+[tool.hatch.build.targets.wheel]
+packages = ["src/cvxdual"]

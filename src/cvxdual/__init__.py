@@ -1,3 +1,3 @@
-from .api import DualizationResult, dualize, solve_dual
+from .api import DualMeta, DualVariable, DualizationResult, dualize, solve_dual
 
-__all__ = ["DualizationResult", "dualize", "solve_dual"]
+__all__ = ["DualMeta", "DualVariable", "DualizationResult", "dualize", "solve_dual"]
