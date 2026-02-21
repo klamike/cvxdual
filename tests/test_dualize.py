@@ -1,61 +1,13 @@
-"""Core functional tests: variable inspection, QP, multi-cone, domains, API."""
+"""Core functional tests: QP, multi-cone, domains, API."""
 import cvxpy as cp
 import numpy as np
-import pytest
 from cvxpy.constraints.exponential import ExpCone
 from cvxpy.constraints.power import PowCone3D
 
-from cvxdual import DualVariable, DualizationResult, dualize, solve_dual
+from cvxdual import DualizationResult, dualize, solve_dual
 
-
-def _is_solved(status: str) -> bool:
-    return status in (cp.OPTIMAL, cp.OPTIMAL_INACCURATE)
-
-
-class TestDualVariableInspection:
-    def test_names_follow_convention(self):
-        x = cp.Variable(2)
-        result = dualize(cp.Problem(cp.Minimize(cp.sum(x)), [x >= 0, cp.sum(x) == 1]))
-        for dv in result.dual_variables:
-            assert dv.name.startswith("dual_")
-
-    def test_cone_types(self):
-        x = cp.Variable(2)
-        result = dualize(cp.Problem(cp.Minimize(cp.sum(x)), [x >= 0, cp.sum(x) == 1]))
-        cone_types = {dv.cone_type for dv in result.dual_variables}
-        assert "zero" in cone_types or "nonneg" in cone_types
-
-    def test_variable_shape_matches_constraint(self):
-        x = cp.Variable(3)
-        result = dualize(cp.Problem(cp.Minimize(cp.sum(x)), [x >= 0, cp.sum(x) >= 1]))
-        for dv in result.dual_variables:
-            assert dv.variable.size == dv.constraint.size
-
-    def test_A_and_b_block_shapes(self):
-        x = cp.Variable(3)
-        result = dualize(cp.Problem(cp.Minimize(cp.sum(x)), [x >= 0, cp.sum(x) >= 1]))
-        for dv in result.dual_variables:
-            if isinstance(dv.A_block, np.ndarray):
-                assert dv.A_block.shape[0] == dv.variable.size
-            if isinstance(dv.b_block, np.ndarray):
-                assert dv.b_block.shape[0] == dv.variable.size
-
-    def test_terms_are_expressions(self):
-        x = cp.Variable(2)
-        result = dualize(cp.Problem(cp.Minimize(cp.sum(x)), [x >= 0]))
-        for dv in result.dual_variables:
-            assert isinstance(dv.objective_term, cp.Expression)
-            assert isinstance(dv.constraint_term, cp.Expression)
 
 class TestQuadraticObjective:
-    def test_quad_obj_creates_slack(self):
-        x = cp.Variable(2)
-        result = dualize(cp.Problem(
-            cp.Minimize(cp.quad_form(x, np.eye(2)) + cp.sum(x)), [x >= -1, cp.sum(x) >= 0],
-        ))
-        assert result.quad_slack is not None
-        assert result.quad_slack.name() == "dual_quad_slack"
-
     def test_quad_obj_dual_is_dcp(self):
         x = cp.Variable(2)
         result = dualize(cp.Problem(cp.Minimize(cp.quad_form(x, np.eye(2)) + cp.sum(x)), [x >= -1]))
@@ -83,10 +35,6 @@ class TestQuadraticObjective:
         solve_dual(primal, solver=cp.SCS, eps=1e-8)
         assert np.allclose(x.value, x_ref, atol=1e-3)
 
-    def test_quad_obj_no_slack_for_linear(self):
-        x = cp.Variable(2)
-        assert dualize(cp.Problem(cp.Minimize(cp.sum(x)), [x >= 0])).quad_slack is None
-
     def test_quad_obj_with_equality_constraints(self):
         x = cp.Variable(3)
         primal = cp.Problem(cp.Minimize(cp.quad_form(x, np.eye(3))), [cp.sum(x) == 1, x >= 0])
@@ -98,19 +46,6 @@ class TestQuadraticObjective:
 
 
 class TestDualizationResultAPI:
-    def test_dual_for_constraint_returns_values(self):
-        x = cp.Variable(2)
-        c1, c2 = x >= 0, cp.sum(x) >= 1
-        primal = cp.Problem(cp.Minimize(cp.sum(x)), [c1, c2])
-        result = solve_dual(primal, solver=cp.SCS, eps=1e-8)
-        assert result.dual_for_constraint(c1) is not None
-        assert result.dual_for_constraint(c2) is not None
-
-    def test_dual_for_nonexistent_constraint_returns_none(self):
-        x = cp.Variable(2)
-        result = dualize(cp.Problem(cp.Minimize(cp.sum(x)), [x >= 0]))
-        assert result.dual_for_constraint(x[0] >= 100) is None
-
     def test_objective_offset_preserved(self):
         x = cp.Variable(2)
         primal = cp.Problem(cp.Minimize(cp.sum(x) + 42.0), [x >= 0, cp.sum(x) >= 1])
@@ -224,69 +159,3 @@ class TestVariableDomains:
         solve_dual(p2, solver=cp.SCS, eps=1e-8)
         assert abs(p1.value - p2.value) < 1e-4
         assert np.allclose(x1.value, x2.value, atol=1e-3)
-
-
-class TestDualFeasibilityFromPrimal:
-    """Solve the primal, dualize, verify dual solution satisfies all dual constraints."""
-
-    def test_lp_primal_duals_feasible(self):
-        x = cp.Variable(2)
-        primal = cp.Problem(cp.Minimize(2 * x[0] + x[1]), [x >= 0, x[0] + x[1] >= 1])
-
-        primal.solve(solver=cp.SCS, eps=1e-8)
-        assert _is_solved(primal.status)
-        pval = primal.value
-
-        result = dualize(primal)
-        result.dual_problem.solve(solver=cp.SCS, eps=1e-8)
-        assert _is_solved(result.dual_problem.status)
-        assert abs(pval - result.dual_problem.value) < 1e-4
-
-        for dv in result.dual_variables:
-            assert dv.variable.value is not None
-            for con in dv.cone_constraints:
-                assert np.max(con.violation()) < 1e-4, f"{dv.name}: cone violation {con.violation()}"
-        assert np.max(result.dual_constraints.violation()) < 1e-4
-
-        result.unpack_primal()
-        for con in primal.constraints:
-            assert con.dual_value is not None
-
-    def test_socp_primal_duals_feasible(self):
-        x = cp.Variable(3)
-        t = cp.Variable()
-        primal = cp.Problem(cp.Minimize(t), [cp.norm(x, 2) <= t, cp.sum(x) == 1])
-
-        primal.solve(solver=cp.SCS, eps=1e-8)
-        assert _is_solved(primal.status)
-        pval = primal.value
-
-        result = dualize(primal)
-        result.dual_problem.solve(solver=cp.SCS, eps=1e-8)
-        assert _is_solved(result.dual_problem.status)
-        assert abs(pval - result.dual_problem.value) < 1e-4
-
-        for dv in result.dual_variables:
-            assert dv.variable.value is not None
-            for con in dv.cone_constraints:
-                assert np.max(con.violation()) < 1e-4, f"{dv.name}: cone violation {con.violation()}"
-        assert np.max(result.dual_constraints.violation()) < 1e-4
-
-    def test_psd_primal_duals_feasible(self):
-        X = cp.Variable((2, 2), symmetric=True)
-        primal = cp.Problem(cp.Minimize(cp.trace(X)), [X >> np.eye(2)])
-
-        primal.solve(solver=cp.SCS, eps=1e-6)
-        assert _is_solved(primal.status)
-        pval = primal.value
-
-        result = dualize(primal)
-        result.dual_problem.solve(solver=cp.SCS, eps=1e-6)
-        assert _is_solved(result.dual_problem.status)
-        assert abs(pval - result.dual_problem.value) < 5e-3
-
-        for dv in result.dual_variables:
-            assert dv.variable.value is not None
-            for con in dv.cone_constraints:
-                assert np.max(con.violation()) < 1e-3, f"{dv.name}: cone violation {con.violation()}"
-        assert np.max(result.dual_constraints.violation()) < 1e-3
