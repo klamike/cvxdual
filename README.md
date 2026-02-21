@@ -2,6 +2,8 @@
 
 `cvxdual` provides automatic dualization for CVXPY models.
 
+This branch relies on [a fork](https://github.com/cvxpy/cvxpy/compare/master...klamike:DNLP:mk/quaddual?expand=1) of `cvxpy` that includes changes to the `Dualize` reduction for supporting quadratic objectives.
+
 - `dualize(problem)` builds the dual problem given the primal.
 - `solve_dual(problem, **solve_kwargs)` solves the dual problem given the primal.
 
